@@ -67,7 +67,7 @@ module fc_subsystem #(
     logic [31:0] hart_id;
 
     //EU signals
-    logic core_clock_en;
+    logic intc_clock_en;
     logic fetch_en_eu  ;
 
     //Core Instr Bus
@@ -113,153 +113,200 @@ module fc_subsystem #(
     assign core_instr_rdata      = l2_instr_master.r_rdata;
     assign core_instr_err        = l2_instr_master.r_opc;
 
+
+    //********************************************************
+    //************ TCLS SIGNALS ******************************
+    //********************************************************
+
+
+    logic [2:0] red_rst_n;
+    logic [2:0][ 31:0] red_hart_id;
+    logic [2:0]       red_fetch_en_int;
+    logic [2:0][ 31:0] red_boot_addr;
+
+    logic [2:0][ 31:0] red_irq_x;
+    logic [2:0]        red_irq_x_ack;
+    logic [2:0][ 4:0]  red_irq_x_ack_id;
+
+    logic [2:0]        red_instr_err;
+    logic [2:0]        red_instr_req;
+    logic [2:0]        red_instr_gnt;
+    logic [2:0][ 31:0] red_instr_addr;
+    logic [2:0][ 31:0] red_instr_rdata;
+    logic [2:0]        red_instr_rvalid;
+
+    logic [2:0]        red_debug_req;
+
+    logic [2:0]        red_data_req;
+    logic [2:0][ 31:0] red_data_addr;
+    logic [2:0]        red_data_we;
+    logic [2:0][ 31:0] red_data_wdata;
+    logic [2:0][ 3:0]  red_data_be;
+    logic [2:0]        red_data_gnt;
+    logic [2:0][ 31:0] red_data_rdata;
+    logic [2:0]        red_data_rvalid;
+    logic [2:0]        red_data_err;
+
+    logic [2:0][4:0]  red_perf_counters;
+
+    cTCLS_unit #(
+                   .NExtPerfCounters(5)
+    ) i_cTCLS_unit (
+                    .clk_i(clk_i),
+                    .rst_ni(rst_ni),
+
+                    .speriph_request(),
+                    .speriph_response(),
+
+  // Ports to connect Interconnect/rest of system
+                    .intc_hart_id_i(hart_id),
+
+                    .intc_fetch_en_i(fetch_en_int),
+                    .intc_boot_addr_i(boot_addr),
+
+                    .intc_irq_x_i(core_irq_x),
+                    .intc_irq_x_ack_o(core_irq_ack),
+                    .intc_irq_x_ack_id_o(core_irq_ack_id),
+                    .intc_instr_err_i(core_instr_err),
+                    .intc_instr_req_o(core_instr_req),
+                    .intc_instr_gnt_i(core_instr_gnt),
+                    .intc_instr_addr_o(core_instr_addr),
+                    .intc_instr_rdata_i(core_instr_rdata),
+                    .intc_instr_rvalid_i(core_instr_rvalid),
+
+                    .intc_debug_req_i(debug_req_i),
+
+                    .intc_data_req_o(core_data_req),
+                    .intc_data_addr_o(core_data_addr),
+                    .intc_data_we_o(core_data_we),
+                    .intc_data_wdata_o(core_data_wdata),
+                    .intc_data_be_o(core_data_be),
+                    .intc_data_gnt_i(core_data_gnt),
+                    .intc_data_rdata_i(core_data_rdata),
+                    .intc_data_rvalid_i(core_data_rvalid),
+                    .intc_data_err_i(core_data_err),
+
+                    .intc_perf_counters_i({ {16 - N_EXT_PERF_COUNTERS {'0}}, perf_counters_int }),
+
+  // Ports to connect Cores
+                    .core_rst_no(red_rst_n),
+
+                    .core_hart_id_o(red_hart_id),
+
+
+                    .core_fetch_en_o(red_fetch_en_int),
+                    .core_boot_addr_o(red_boot_addr),
+
+                    .core_irq_x_o(red_irq_x),
+                    .core_irq_x_ack_i(red_irq_x_ack),
+                    .core_irq_x_ack_id_i(red_irq_x_ack_id),
+
+                    .core_instr_err_o(red_instr_err),
+                    .core_instr_req_i(red_instr_req),
+                    .core_instr_gnt_o(red_instr_gnt),
+                    .core_instr_addr_i(red_instr_addr),
+                    .core_instr_rdata_o(red_instr_rdata),
+                    .core_instr_rvalid_o(red_instr_rvalid),
+
+                    .core_debug_req_o(red_debug_req),
+
+                    .core_data_req_i(red_data_req),
+                    .core_data_addr_i(red_data_addr),
+                    .core_data_we_i(red_data_we),
+                    .core_data_wdata_i(red_data_wdata),
+                    .core_data_be_i(red_data_be),
+                    .core_data_gnt_o(red_data_gnt),
+                    .core_data_rdata_o(red_data_rdata),
+                    .core_data_rvalid_o(red_data_rvalid),
+                    .core_data_err_o(red_data_err),
+
+                    .core_perf_counters_o(red_perf_counters)
+
+                    );
+
+
+
     //********************************************************
     //************ RISCV CORE ********************************
     //********************************************************
-    generate
-    if ( USE_IBEX == 0) begin: FC_CORE
-    assign boot_addr = boot_addr_i;
-    riscv_core #(
-        .N_EXT_PERF_COUNTERS ( N_EXT_PERF_COUNTERS ),
-        .PULP_SECURE         ( 1                   ),
-        .PULP_CLUSTER        ( 0                   ),
-        .FPU                 ( USE_FPU             ),
-        .FP_DIVSQRT          ( USE_FPU             ),
-        .SHARED_FP           ( 0                   ),
-        .SHARED_FP_DIVSQRT   ( 2                   ),
-        .Zfinx               ( USE_ZFINX           )
-    ) lFC_CORE (
-        .clk_i                 ( clk_i             ),
-        .rst_ni                ( rst_ni            ),
-        .clock_en_i            ( core_clock_en     ),
-        .test_en_i             ( test_en_i         ),
-        .boot_addr_i           ( boot_addr         ),
-        .core_id_i             ( CORE_ID           ),
-        .cluster_id_i          ( CLUSTER_ID        ),
 
-        // Instruction Memory Interface:  Interface to Instruction Logaritmic interconnect: Req->grant handshake
-        .instr_addr_o          ( core_instr_addr   ),
-        .instr_req_o           ( core_instr_req    ),
-        .instr_rdata_i         ( core_instr_rdata  ),
-        .instr_gnt_i           ( core_instr_gnt    ),
-        .instr_rvalid_i        ( core_instr_rvalid ),
-
-        // Data memory interface:
-        .data_addr_o           ( core_data_addr    ),
-        .data_req_o            ( core_data_req     ),
-        .data_be_o             ( core_data_be      ),
-        .data_rdata_i          ( core_data_rdata   ),
-        .data_we_o             ( core_data_we      ),
-        .data_gnt_i            ( core_data_gnt     ),
-        .data_wdata_o          ( core_data_wdata   ),
-        .data_rvalid_i         ( core_data_rvalid  ),
-
-        // apu-interconnect
-        // handshake signals
-        .apu_master_req_o      (                   ),
-        .apu_master_ready_o    (                   ),
-        .apu_master_gnt_i      ( 1'b1              ),
-        // request channel
-        .apu_master_operands_o (                   ),
-        .apu_master_op_o       (                   ),
-        .apu_master_type_o     (                   ),
-        .apu_master_flags_o    (                   ),
-        // response channel
-        .apu_master_valid_i    ( '0                ),
-        .apu_master_result_i   ( '0                ),
-        .apu_master_flags_i    ( '0                ),
-
-        .irq_i                 ( core_irq_req      ),
-        .irq_id_i              ( core_irq_id       ),
-        .irq_ack_o             ( core_irq_ack      ),
-        .irq_id_o              ( core_irq_ack_id   ),
-        .irq_sec_i             ( 1'b0              ),
-        .sec_lvl_o             (                   ),
-
-        .debug_req_i           ( debug_req_i       ),
-
-        .fetch_enable_i        ( fetch_en_int      ),
-        .core_busy_o           (                   ),
-        .ext_perf_counters_i   ( perf_counters_int ),
-        .fregfile_disable_i    ( 1'b0              ) // try me!
-    );
-    end else begin: FC_CORE
     assign boot_addr = boot_addr_i & 32'hFFFFFF00; // RI5CY expects 0x80 offset, Ibex expects 0x00 offset (adds reset offset 0x80 internally)
+    for (genvar i = 0; i < 3; i++) begin :gen_core_inst
 `ifdef VERILATOR
-    ibex_core #(
+        ibex_core #(
 `elsif TRACE_EXECUTION
-    ibex_core_tracing #(
+        ibex_core_tracing #(
 `else
-    ibex_core #(
+        ibex_core #(
 `endif
-        .PMPEnable        ( 1'b0                ),
-        .PMPGranularity   ( 0                   ),
-        .PMPNumRegions    ( 4                   ),
-        .MHPMCounterNum   ( 10                  ),
-        .MHPMCounterWidth ( 40                  ),
-        .RV32E            ( IBEX_RV32E          ),
-        .RV32M            ( IBEX_RV32M          ),
-        .RV32B            ( ibex_pkg::RV32BNone ),
-        .RegFile          ( ibex_pkg::RegFileFF ),
-        .BranchTargetALU  ( 1'b0                ),
-        .WritebackStage   ( 1'b0                ),
-        .ICache           ( 1'b0                ),
-        .ICacheECC        ( 1'b0                ),
-        .BranchPredictor  ( 1'b0                ),
-        .DbgTriggerEn     ( 1'b1                ),
-        .DbgHwBreakNum    ( 1                   ),
-        .SecureIbex       ( 1'b0                ),
-        .DmHaltAddr       ( 32'h1A110800        ),
-        .DmExceptionAddr  ( 32'h1A110808        )
-    ) lFC_CORE (
-        .clk_i                 ( clk_i             ),
-        .rst_ni                ( rst_ni            ),
+                    .PMPEnable        ( 1'b0                ),
+                    .PMPGranularity   ( 0                   ),
+                    .PMPNumRegions    ( 4                   ),
+                    .MHPMCounterNum   ( 10                  ),
+                    .MHPMCounterWidth ( 40                  ),
+                    .RV32E            ( IBEX_RV32E          ),
+                    .RV32M            ( IBEX_RV32M          ),
+                    .RV32B            ( ibex_pkg::RV32BNone ),
+                    .RegFile          ( ibex_pkg::RegFileFF ),
+                    .BranchTargetALU  ( 1'b0                ),
+                    .WritebackStage   ( 1'b0                ),
+                    .ICache           ( 1'b0                ),
+                    .ICacheECC        ( 1'b0                ),
+                    .BranchPredictor  ( 1'b0                ),
+                    .DbgTriggerEn     ( 1'b1                ),
+                    .DbgHwBreakNum    ( 1                   ),
+                    .SecureIbex       ( 1'b0                ),
+                    .DmHaltAddr       ( 32'h1A110800        ),
+                    .DmExceptionAddr  ( 32'h1A110808        )
+                    ) i_lFC_CORE (
+                    .clk_i                 ( clk_i             ),
+                    .rst_ni                ( red_rst_n[i]     ),
 
-        .test_en_i             ( test_en_i         ),
+                    .test_en_i             ( test_en_i         ),
 
-        .hart_id_i             ( hart_id           ),
-        .boot_addr_i           ( boot_addr         ),
+                    .hart_id_i             ( red_hart_id[i]           ),
+                    .boot_addr_i           ( red_boot_addr[i]         ),
 
-        // Instruction Memory Interface:  Interface to Instruction Logaritmic interconnect: Req->grant handshake
-        .instr_addr_o          ( core_instr_addr   ),
-        .instr_req_o           ( core_instr_req    ),
-        .instr_rdata_i         ( core_instr_rdata  ),
-        .instr_gnt_i           ( core_instr_gnt    ),
-        .instr_rvalid_i        ( core_instr_rvalid ),
-        .instr_err_i           ( core_instr_err    ),
+                    // Instruction Memory Interface:  Interface to Instruction Logaritmic interconnect: Req->grant handshake
+                    .instr_addr_o          ( red_instr_addr[i]   ),
+                    .instr_req_o           ( red_instr_req[i]    ),
+                    .instr_rdata_i         ( red_instr_rdata[i]  ),
+                    .instr_gnt_i           ( red_instr_gnt[i]    ),
+                    .instr_rvalid_i        ( red_instr_rvalid[i] ),
+                    .instr_err_i           ( red_instr_err[i]    ),
 
-        // Data memory interface:
-        .data_addr_o           ( core_data_addr    ),
-        .data_req_o            ( core_data_req     ),
-        .data_be_o             ( core_data_be      ),
-        .data_rdata_i          ( core_data_rdata   ),
-        .data_we_o             ( core_data_we      ),
-        .data_gnt_i            ( core_data_gnt     ),
-        .data_wdata_o          ( core_data_wdata   ),
-        .data_rvalid_i         ( core_data_rvalid  ),
-        .data_err_i            ( core_data_err     ),
+                    // Data memory interface:
+                    .data_addr_o           ( red_data_addr[i]    ),
+                    .data_req_o            ( red_data_req[i]     ),
+                    .data_be_o             ( red_data_be[i]      ),
+                    .data_rdata_i          ( red_data_rdata[i]   ),
+                    .data_we_o             ( red_data_we[i]      ),
+                    .data_gnt_i            ( red_data_gnt[i]     ),
+                    .data_wdata_o          ( red_data_wdata[i]   ),
+                    .data_rvalid_i         ( red_data_rvalid[i]  ),
+                    .data_err_i            ( red_data_err[i]     ),
 
-        .irq_software_i        ( 1'b0              ),
-        .irq_timer_i           ( 1'b0              ),
-        .irq_external_i        ( 1'b0              ),
-        .irq_fast_i            ( 15'b0             ),
-        .irq_nm_i              ( 1'b0              ),
+                    .irq_software_i        ( 1'b0              ),
+                    .irq_timer_i           ( 1'b0              ),
+                    .irq_external_i        ( 1'b0              ),
+                    .irq_fast_i            ( 15'b0             ),
+                    .irq_nm_i              ( 1'b0              ),
 
-        .irq_x_i               ( core_irq_x        ),
-        .irq_x_ack_o           ( core_irq_ack      ),
-        .irq_x_ack_id_o        ( core_irq_ack_id   ),
+                    .irq_x_i               ( red_irq_x[i]        ),
+                    .irq_x_ack_o           ( red_irq_x_ack[i]      ),
+                    .irq_x_ack_id_o        ( red_irq_x_ack_id[i]   ),
 
-        .external_perf_i       ( { {16 - N_EXT_PERF_COUNTERS {'0}}, perf_counters_int } ),
+                    //.external_perf_i       ( { {16 - N_EXT_PERF_COUNTERS {'0}}, perf_counters_int } ),
+                    .external_perf_i       ( red_perf_counters[i]     ),
+                    .debug_req_i           ( red_debug_req[i]       ),
 
-        .debug_req_i           ( debug_req_i       ),
+                    .fetch_enable_i        ( red_fetch_en_int[i]      ),
+                    .alert_minor_o         (                   ),
+                    .alert_major_o         (                   ),
+                    .core_sleep_o          (                   )
+                    );
+    end // for loop
 
-        .fetch_enable_i        ( fetch_en_int      ),
-        .alert_minor_o         (                   ),
-        .alert_major_o         (                   ),
-        .core_sleep_o          (                   )
-    );
-    end
-    endgenerate
 
     assign supervisor_mode_o = 1'b1;
 
