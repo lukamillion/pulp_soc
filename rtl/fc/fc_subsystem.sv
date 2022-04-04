@@ -8,6 +8,10 @@
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the
 // specific language governing permissions and limitations under the License.
 
+`include "register_interface/typedef.svh"
+// Peripheral communication signals
+import ctcls_manager_reg_pkg::* ;
+`REG_BUS_TYPEDEF_ALL(tcls, logic[31:0], logic[31:0], logic[3:0])
 
 module fc_subsystem #(
     parameter CORE_TYPE           = 0,
@@ -24,27 +28,28 @@ module fc_subsystem #(
     parameter USE_ZFINX           = 1
 )
 (
-    input  logic                      clk_i,
-    input  logic                      rst_ni,
-    input  logic                      test_en_i,
+    input logic                      clk_i,
+    input logic                      rst_ni,
+    input logic                      test_en_i,
 
-    XBAR_TCDM_BUS.Master              l2_data_master,
-    XBAR_TCDM_BUS.Master              l2_instr_master,
-    XBAR_TCDM_BUS.Master              l2_hwpe_master [NB_HWPE_PORTS-1:0],
-    APB_BUS.Slave                     apb_slave_eu,
-    APB_BUS.Slave                     apb_slave_hwpe,
+    XBAR_TCDM_BUS.Master l2_data_master,
+    XBAR_TCDM_BUS.Master l2_instr_master,
+    XBAR_TCDM_BUS.Master l2_hwpe_master [NB_HWPE_PORTS-1:0],
+    APB_BUS.Slave apb_slave_eu,
+    APB_BUS.Slave apb_slave_hwpe,
+    APB_BUS.Slave apb_slave_tcls,
 
-    input  logic                      fetch_en_i,
-    input  logic [31:0]               boot_addr_i,
-    input  logic                      debug_req_i,
+    input logic                      fetch_en_i,
+    input logic [31:0]               boot_addr_i,
+    input logic                      debug_req_i,
 
-    input  logic                      event_fifo_valid_i,
-    output logic                      event_fifo_fulln_o,
-    input  logic [EVENT_ID_WIDTH-1:0] event_fifo_data_i, // goes indirectly to core interrupt
-    input  logic [31:0]               events_i, // goes directly to core interrupt, should be called irqs
-    output logic [1:0]                hwpe_events_o,
+    input logic                      event_fifo_valid_i,
+    output logic                     event_fifo_fulln_o,
+    input logic [EVENT_ID_WIDTH-1:0] event_fifo_data_i, // goes indirectly to core interrupt
+    input logic [31:0]               events_i, // goes directly to core interrupt, should be called irqs
+    output logic [1:0]               hwpe_events_o,
 
-    output logic                      supervisor_mode_o
+    output logic                     supervisor_mode_o
 );
 
     localparam USE_IBEX   = CORE_TYPE == 1 || CORE_TYPE == 2;
@@ -118,6 +123,10 @@ module fc_subsystem #(
     //************ TCLS SIGNALS ******************************
     //********************************************************
 
+    tcls_req_t tcls_req;
+    tcls_rsp_t tcls_rsp;
+
+
 
     logic [2:0] red_rst_n;
     logic [2:0][ 31:0] red_hart_id;
@@ -155,8 +164,9 @@ module fc_subsystem #(
                     .clk_i(clk_i),
                     .rst_ni(rst_ni),
 
-                    .speriph_request(),
-                    .speriph_response(),
+                    .speriph_request(tcls_req),
+                    .speriph_response(tcls_rsp),
+                    .tcls_triple_core_mismatch(),
 
   // Ports to connect Interconnect/rest of system
                     .intc_hart_id_i(hart_id),
@@ -230,82 +240,112 @@ module fc_subsystem #(
     //************ RISCV CORE ********************************
     //********************************************************
 
-    assign boot_addr = boot_addr_i & 32'hFFFFFF00; // RI5CY expects 0x80 offset, Ibex expects 0x00 offset (adds reset offset 0x80 internally)
-    for (genvar i = 0; i < 3; i++) begin :gen_core_inst
+  assign boot_addr = boot_addr_i & 32'hFFFFFF00; // RI5CY expects 0x80 offset, Ibex expects 0x00 offset (adds reset offset 0x80 internally)
+  for (genvar i = 0; i < 3; i++) begin :gen_core_inst
 `ifdef VERILATOR
-        ibex_core #(
+    ibex_core #(
 `elsif TRACE_EXECUTION
-        ibex_core_tracing #(
+    ibex_core_tracing #(
 `else
-        ibex_core #(
+    ibex_core #(
 `endif
-                    .PMPEnable        ( 1'b0                ),
-                    .PMPGranularity   ( 0                   ),
-                    .PMPNumRegions    ( 4                   ),
-                    .MHPMCounterNum   ( 10                  ),
-                    .MHPMCounterWidth ( 40                  ),
-                    .RV32E            ( IBEX_RV32E          ),
-                    .RV32M            ( IBEX_RV32M          ),
-                    .RV32B            ( ibex_pkg::RV32BNone ),
-                    .RegFile          ( ibex_pkg::RegFileFF ),
-                    .BranchTargetALU  ( 1'b0                ),
-                    .WritebackStage   ( 1'b0                ),
-                    .ICache           ( 1'b0                ),
-                    .ICacheECC        ( 1'b0                ),
-                    .BranchPredictor  ( 1'b0                ),
-                    .DbgTriggerEn     ( 1'b1                ),
-                    .DbgHwBreakNum    ( 1                   ),
-                    .SecureIbex       ( 1'b0                ),
-                    .DmHaltAddr       ( 32'h1A110800        ),
-                    .DmExceptionAddr  ( 32'h1A110808        )
-                    ) i_lFC_CORE (
-                    .clk_i                 ( clk_i             ),
-                    .rst_ni                ( red_rst_n[i]     ),
+                .PMPEnable        ( 1'b0                ),
+                .PMPGranularity   ( 0                   ),
+                .PMPNumRegions    ( 4                   ),
+                .MHPMCounterNum   ( 10                  ),
+                .MHPMCounterWidth ( 40                  ),
+                .RV32E            ( IBEX_RV32E          ),
+                .RV32M            ( IBEX_RV32M          ),
+                .RV32B            ( ibex_pkg::RV32BNone ),
+                .RegFile          ( ibex_pkg::RegFileFF ),
+                .BranchTargetALU  ( 1'b0                ),
+                .WritebackStage   ( 1'b0                ),
+                .ICache           ( 1'b0                ),
+                .ICacheECC        ( 1'b0                ),
+                .BranchPredictor  ( 1'b0                ),
+                .DbgTriggerEn     ( 1'b1                ),
+                .DbgHwBreakNum    ( 1                   ),
+                .SecureIbex       ( 1'b0                ),
+                .DmHaltAddr       ( 32'h1A110800        ),
+                .DmExceptionAddr  ( 32'h1A110808        )
+                ) i_lFC_CORE (
+                              .clk_i                 ( clk_i             ),
+                              .rst_ni                ( red_rst_n[i]     ),
 
-                    .test_en_i             ( test_en_i         ),
+                              .test_en_i             ( test_en_i         ),
 
-                    .hart_id_i             ( red_hart_id[i]           ),
-                    .boot_addr_i           ( red_boot_addr[i]         ),
+                              .hart_id_i             ( red_hart_id[i]           ),
+                              .boot_addr_i           ( red_boot_addr[i]         ),
 
-                    // Instruction Memory Interface:  Interface to Instruction Logaritmic interconnect: Req->grant handshake
-                    .instr_addr_o          ( red_instr_addr[i]   ),
-                    .instr_req_o           ( red_instr_req[i]    ),
-                    .instr_rdata_i         ( red_instr_rdata[i]  ),
-                    .instr_gnt_i           ( red_instr_gnt[i]    ),
-                    .instr_rvalid_i        ( red_instr_rvalid[i] ),
-                    .instr_err_i           ( red_instr_err[i]    ),
+                              // Instruction Memory Interface:  Interface to Instruction Logaritmic interconnect: Req->grant handshake
+                              .instr_addr_o          ( red_instr_addr[i]   ),
+                              .instr_req_o           ( red_instr_req[i]    ),
+                              .instr_rdata_i         ( red_instr_rdata[i]  ),
+                              .instr_gnt_i           ( red_instr_gnt[i]    ),
+                              .instr_rvalid_i        ( red_instr_rvalid[i] ),
+                              .instr_err_i           ( red_instr_err[i]    ),
 
-                    // Data memory interface:
-                    .data_addr_o           ( red_data_addr[i]    ),
-                    .data_req_o            ( red_data_req[i]     ),
-                    .data_be_o             ( red_data_be[i]      ),
-                    .data_rdata_i          ( red_data_rdata[i]   ),
-                    .data_we_o             ( red_data_we[i]      ),
-                    .data_gnt_i            ( red_data_gnt[i]     ),
-                    .data_wdata_o          ( red_data_wdata[i]   ),
-                    .data_rvalid_i         ( red_data_rvalid[i]  ),
-                    .data_err_i            ( red_data_err[i]     ),
+                              // Data memory interface:
+                              .data_addr_o           ( red_data_addr[i]    ),
+                              .data_req_o            ( red_data_req[i]     ),
+                              .data_be_o             ( red_data_be[i]      ),
+                              .data_rdata_i          ( red_data_rdata[i]   ),
+                              .data_we_o             ( red_data_we[i]      ),
+                              .data_gnt_i            ( red_data_gnt[i]     ),
+                              .data_wdata_o          ( red_data_wdata[i]   ),
+                              .data_rvalid_i         ( red_data_rvalid[i]  ),
+                              .data_err_i            ( red_data_err[i]     ),
 
-                    .irq_software_i        ( 1'b0              ),
-                    .irq_timer_i           ( 1'b0              ),
-                    .irq_external_i        ( 1'b0              ),
-                    .irq_fast_i            ( 15'b0             ),
-                    .irq_nm_i              ( 1'b0              ),
+                              .irq_software_i        ( 1'b0              ),
+                              .irq_timer_i           ( 1'b0              ),
+                              .irq_external_i        ( 1'b0              ),
+                              .irq_fast_i            ( 15'b0             ),
+                              .irq_nm_i              ( 1'b0              ),
 
-                    .irq_x_i               ( red_irq_x[i]        ),
-                    .irq_x_ack_o           ( red_irq_x_ack[i]      ),
-                    .irq_x_ack_id_o        ( red_irq_x_ack_id[i]   ),
+                              .irq_x_i               ( red_irq_x[i]        ),
+                              .irq_x_ack_o           ( red_irq_x_ack[i]      ),
+                              .irq_x_ack_id_o        ( red_irq_x_ack_id[i]   ),
 
-                    //.external_perf_i       ( { {16 - N_EXT_PERF_COUNTERS {'0}}, perf_counters_int } ),
-                    .external_perf_i       ( red_perf_counters[i]     ),
-                    .debug_req_i           ( red_debug_req[i]       ),
+                              //.external_perf_i       ( { {16 - N_EXT_PERF_COUNTERS {'0}}, perf_counters_int } ),
+                              .external_perf_i       ( red_perf_counters[i]     ),
+                              .debug_req_i           ( red_debug_req[i]       ),
 
-                    .fetch_enable_i        ( red_fetch_en_int[i]      ),
-                    .alert_minor_o         (                   ),
-                    .alert_major_o         (                   ),
-                    .core_sleep_o          (                   )
-                    );
-    end // for loop
+                              .fetch_enable_i        ( red_fetch_en_int[i]      ),
+                              .alert_minor_o         (                   ),
+                              .alert_major_o         (                   ),
+                              .core_sleep_o          (                   )
+                              );
+  end // for loop
+
+
+  // APB2REG converter
+
+  REG_BUS #(.ADDR_WIDTH(32), .DATA_WIDTH(32))reg_tcls_bus ();
+
+
+  apb_to_reg apb2reg (
+                      .clk_i(clk_i),
+                      .rst_ni(rst_ni),
+                      .penable_i(apb_slave_tcls.penable),
+                      .pwrite_i(apb_slave_tcls.pwrite),
+                      .paddr_i(apb_slave_tcls.paddr),
+                      .psel_i(apb_slave_tcls.psel),
+                      .pwdata_i(apb_slave_tcls.pwdata),
+                      .prdata_o(apb_slave_tcls.prdata),
+                      .pready_o(apb_slave_tcls.pready),
+                      .pslverr_o(apb_slave_tcls.pslverr),
+                      .reg_o(reg_tcls_bus)
+                      );
+
+  assign tcls_req = '{ addr: reg_tcls_bus.addr,
+               write: reg_tcls_bus.write,
+               wdata: reg_tcls_bus.wdata,
+               wstrb: reg_tcls_bus.wstrb,
+               valid: reg_tcls_bus.valid
+               };
+  assign reg_tcls_bus.rdata = tcls_rsp.rdata;
+  assign reg_tcls_bus.error = tcls_rsp.error;
+  assign reg_tcls_bus.ready = tcls_rsp.ready;
 
 
     assign supervisor_mode_o = 1'b1;

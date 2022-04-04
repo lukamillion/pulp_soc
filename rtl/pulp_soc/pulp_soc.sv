@@ -358,6 +358,7 @@ module pulp_soc import dm::*; #(
     APB_BUS                s_apb_eu_bus ();
     APB_BUS                s_apb_hwpe_bus ();
     APB_BUS                s_apb_debug_bus();
+    APB_BUS                s_apb_tcls_bus ();
 
 
     AXI_BUS #(
@@ -614,6 +615,7 @@ module pulp_soc import dm::*; #(
         .apb_eu_master          ( s_apb_eu_bus           ),
         .apb_debug_master       ( s_apb_debug_bus        ),
         .apb_hwpe_master        ( s_apb_hwpe_bus         ),
+        .apb_tcls_master        ( s_apb_tcls_bus         ),
 
         .l2_rx_master           ( s_lint_udma_rx_bus     ),
         .l2_tx_master           ( s_lint_udma_tx_bus     ),
@@ -780,6 +782,7 @@ module pulp_soc import dm::*; #(
         .l2_hwpe_master      ( s_lint_hwpe_bus     ),
         .apb_slave_eu        ( s_apb_eu_bus        ),
         .apb_slave_hwpe      ( s_apb_hwpe_bus      ),
+        .apb_slave_tcls      ( s_apb_tcls_bus      ),
         .debug_req_i         ( dm_debug_req[FC_CORE_MHARTID] ),
 
         .event_fifo_valid_i  ( s_fc_event_valid    ),
