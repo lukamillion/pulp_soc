@@ -156,17 +156,20 @@ module fc_subsystem #(
     logic [2:0]        red_data_rvalid;
     logic [2:0]        red_data_err;
 
-    logic [2:0][4:0]  red_perf_counters;
+    logic [2:0][4:0]   red_perf_counters;
 
-    cTCLS_unit #(
+    logic              tcls_single_core_mismatch;
+
+    TCLS_unit #(
                    .NExtPerfCounters(5)
-    ) i_cTCLS_unit (
+    ) i_TCLS_unit (
                     .clk_i(clk_i),
                     .rst_ni(rst_ni),
 
                     .speriph_request(tcls_req),
                     .speriph_response(tcls_rsp),
                     .tcls_triple_core_mismatch(),
+                    .tcls_single_core_mismatch(tcls_single_core_mismatch),
 
   // Ports to connect Interconnect/rest of system
                     .intc_hart_id_i(hart_id),
@@ -364,11 +367,22 @@ module fc_subsystem #(
     end
     endgenerate
 
+
+
+    logic [31:0] events;
+    assign events [24:0] = events_i[25:0];
+    assign events [25] = tcls_single_core_mismatch;
+    assign events [31:27] = events_i[31:27];
+
+
+
+
+
     apb_interrupt_cntrl #(.PER_ID_WIDTH(PER_ID_WIDTH)) fc_eu_i (
         .clk_i              ( clk_i              ),
         .rst_ni             ( rst_ni             ),
         .test_mode_i        ( test_en_i          ),
-        .events_i           ( events_i           ),
+        .events_i           ( events             ),
         .event_fifo_valid_i ( event_fifo_valid_i ),
         .event_fifo_fulln_o ( event_fifo_fulln_o ),
         .event_fifo_data_i  ( event_fifo_data_i  ),
