@@ -9,6 +9,8 @@
 // specific language governing permissions and limitations under the License.
 
 `include "soc_mem_map.svh"
+`include "register_interface/typedef.svh"
+`include "register_interface/assign.svh"
 
 module l2_ram_multi_bank #(
    parameter NB_BANKS                   = 4,
@@ -19,8 +21,16 @@ module l2_ram_multi_bank #(
    input logic             init_ni,
    input logic             test_mode_i,
    XBAR_TCDM_BUS.Slave     mem_slave[NB_BANKS],
-   XBAR_TCDM_BUS.Slave     mem_pri_slave[2]
+   XBAR_TCDM_BUS.Slave     mem_pri_slave[2],
+   APB_BUS.Slave apb_slave_ecc
 );
+
+    import ecc_manager_reg_pkg::* ;
+    `REG_BUS_TYPEDEF_ALL(ecc, logic[31:0], logic[31:0], logic[3:0])
+
+    ecc_req_t ecc_req;
+    ecc_rsp_t ecc_rsp;
+
     localparam int unsigned BANK_SIZE_PRI0       = 8192; //Number of 32-bit words
     localparam int unsigned BANK_SIZE_PRI1       = 8192; //Number of 32-bit words
 
@@ -53,14 +63,13 @@ module l2_ram_multi_bank #(
 
 
 
-
-
-
        ecc_sram_wrap #(
-                       .BankSize  ( BANK_SIZE_INTL_SRAM )
+                       .BankSize  ( BANK_SIZE_INTL_SRAM ),
+                       .ecc_req_t(ecc_req_t),
+                       .ecc_rsp_t(ecc_rsp_t)
                        ) bank_i (
-                                 .clk_i,
-                                 .rst_ni,
+                                 .clk_i(clk_i),
+                                 .rst_ni(rst_ni),
                                  .tcdm_req_i   (  mem_slave[i].req                                  ),
                                  .tcdm_wen_i    ( mem_slave[i].wen                                  ),
                                  .tcdm_add_i  (  interleaved_addresses[i]),
@@ -92,14 +101,40 @@ module l2_ram_multi_bank #(
 
 
 
+  // register connections
+
+
+  REG_BUS #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) reg_ecc_bus ();
+
+
+  apb_to_reg apb2reg (
+                      .clk_i(clk_i),
+                      .rst_ni(rst_ni),
+                      .penable_i(apb_slave_ecc.penable),
+                      .pwrite_i(apb_slave_ecc.pwrite),
+                      .paddr_i(apb_slave_ecc.paddr),
+                      .psel_i(apb_slave_ecc.psel),
+                      .pwdata_i(apb_slave_ecc.pwdata),
+                      .prdata_o(apb_slave_ecc.prdata),
+                      .pready_o(apb_slave_ecc.pready),
+                      .pslverr_o(apb_slave_ecc.pslverr),
+                      .reg_o(reg_ecc_bus)
+                      );
+
+  `REG_BUS_ASSIGN_TO_REQ(ecc_req, reg_ecc_bus);
+  `REG_BUS_ASSIGN_FROM_RSP(reg_ecc_bus, ecc_rsp);
 
 
 
     ecc_sram_wrap #(
-                    .BankSize  ( BANK_SIZE_PRI0 )
+                    .BankSize  ( BANK_SIZE_PRI0 ),
+                    .ecc_req_t(ecc_req_t),
+                    .ecc_rsp_t(ecc_rsp_t)
                     ) bank_sram_pri0_i (
-                              .clk_i,
-                              .rst_ni,
+                              .clk_i(clk_i),
+                              .rst_ni(rst_ni),
+                              .speriph_request(ecc_req),
+                              .speriph_response(ecc_rsp),
                               .tcdm_req_i   ( mem_pri_slave[0].req                                  ),
                               .tcdm_wen_i    ( mem_pri_slave[0].wen                                 ),
                               .tcdm_add_i  (  pri0_address),
@@ -153,7 +188,9 @@ module l2_ram_multi_bank #(
 
 
     ecc_sram_wrap #(
-                    .BankSize  ( BANK_SIZE_PRI1 )
+                    .BankSize  ( BANK_SIZE_PRI1 ),
+                    .ecc_req_t(ecc_req_t),
+                    .ecc_rsp_t(ecc_rsp_t)
                     ) bank_sram_pri1_i (
                               .clk_i(clk_i),
                               .rst_ni(rst_ni),

@@ -9,6 +9,7 @@
 // specific language governing permissions and limitations under the License.
 
 `include "register_interface/typedef.svh"
+`include "register_interface/assign.svh"
 // Peripheral communication signals
 
 
@@ -126,6 +127,7 @@ module fc_subsystem #(
     //************ TCLS SIGNALS ******************************
     //********************************************************
 
+
     tcls_req_t tcls_req;
     tcls_rsp_t tcls_rsp;
 
@@ -164,7 +166,9 @@ module fc_subsystem #(
     logic              tcls_single_core_mismatch;
 
     TCLS_unit #(
-                   .NExtPerfCounters(5)
+                   .NExtPerfCounters(5),
+                   .tcls_req_t(tcls_req_t),
+                   .tcls_rsp_t(tcls_rsp_t)
     ) i_TCLS_unit (
                     .clk_i(clk_i),
                     .rst_ni(rst_ni),
@@ -326,6 +330,7 @@ module fc_subsystem #(
 
   // APB2REG converter
 
+
   REG_BUS #(.ADDR_WIDTH(32), .DATA_WIDTH(32))reg_tcls_bus ();
 
 
@@ -343,15 +348,8 @@ module fc_subsystem #(
                       .reg_o(reg_tcls_bus)
                       );
 
-  assign tcls_req = '{ addr: reg_tcls_bus.addr,
-               write: reg_tcls_bus.write,
-               wdata: reg_tcls_bus.wdata,
-               wstrb: reg_tcls_bus.wstrb,
-               valid: reg_tcls_bus.valid
-               };
-  assign reg_tcls_bus.rdata = tcls_rsp.rdata;
-  assign reg_tcls_bus.error = tcls_rsp.error;
-  assign reg_tcls_bus.ready = tcls_rsp.ready;
+  `REG_BUS_ASSIGN_TO_REQ(tcls_req, reg_tcls_bus);
+  `REG_BUS_ASSIGN_FROM_RSP(reg_tcls_bus, tcls_rsp);
 
 
     assign supervisor_mode_o = 1'b1;
