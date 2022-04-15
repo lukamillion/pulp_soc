@@ -10,8 +10,7 @@
 
 `include "register_interface/typedef.svh"
 // Peripheral communication signals
-import ctcls_manager_reg_pkg::* ;
-`REG_BUS_TYPEDEF_ALL(tcls, logic[31:0], logic[31:0], logic[3:0])
+
 
 module fc_subsystem #(
     parameter CORE_TYPE           = 0,
@@ -39,6 +38,7 @@ module fc_subsystem #(
     APB_BUS.Slave apb_slave_hwpe,
     APB_BUS.Slave apb_slave_tcls,
 
+
     input logic                      fetch_en_i,
     input logic [31:0]               boot_addr_i,
     input logic                      debug_req_i,
@@ -51,6 +51,9 @@ module fc_subsystem #(
 
     output logic                     supervisor_mode_o
 );
+
+    import ctcls_manager_reg_pkg::* ;
+    `REG_BUS_TYPEDEF_ALL(tcls, logic[31:0], logic[31:0], logic[3:0])
 
     localparam USE_IBEX   = CORE_TYPE == 1 || CORE_TYPE == 2;
     localparam IBEX_RV32M = CORE_TYPE == 1 ? ibex_pkg::RV32MFast : ibex_pkg::RV32MNone;
