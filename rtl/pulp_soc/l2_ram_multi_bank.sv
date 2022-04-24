@@ -45,6 +45,7 @@ module l2_ram_multi_bank #(
 
     //INTERLEAVED Memory
     logic [31:0]           interleaved_addresses[NB_BANKS];
+    logic [NB_BANKS-1:0][1:0]            banks_error;
     for(genvar i=0; i<NB_BANKS; i++) begin : CUTS
         //Perform TCDM handshaking for constant 1 cycle latency
         //assign mem_slave[i].gnt = mem_slave[i].req;
@@ -64,9 +65,7 @@ module l2_ram_multi_bank #(
 
 
        ecc_sram_wrap #(
-                       .BankSize  ( BANK_SIZE_INTL_SRAM ),
-                       .ecc_req_t(ecc_req_t),
-                       .ecc_rsp_t(ecc_rsp_t)
+                       .BankSize  ( BANK_SIZE_INTL_SRAM )
                        ) bank_i (
                                  .clk_i(clk_i),
                                  .rst_ni(rst_ni),
@@ -77,7 +76,8 @@ module l2_ram_multi_bank #(
                                  .tcdm_wdata_i (  mem_slave[i].wdata                                ),
                                  .tcdm_be_i    (  mem_slave[i].be                                   ),
                                  .tcdm_rdata_o (  mem_slave[i].r_rdata                              ),
-                                 .tcdm_gnt_o   (  mem_slave[i].gnt                                  )
+                                 .tcdm_gnt_o   (  mem_slave[i].gnt                                  ),
+                                 .error_o      (  banks_error[i]                                    )
                                  );
 
 
@@ -104,46 +104,25 @@ module l2_ram_multi_bank #(
   // register connections
 
 
-  REG_BUS #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) reg_ecc_bus ();
 
-
-  apb_to_reg apb2reg (
-                      .clk_i(clk_i),
-                      .rst_ni(rst_ni),
-                      .penable_i(apb_slave_ecc.penable),
-                      .pwrite_i(apb_slave_ecc.pwrite),
-                      .paddr_i(apb_slave_ecc.paddr),
-                      .psel_i(apb_slave_ecc.psel),
-                      .pwdata_i(apb_slave_ecc.pwdata),
-                      .prdata_o(apb_slave_ecc.prdata),
-                      .pready_o(apb_slave_ecc.pready),
-                      .pslverr_o(apb_slave_ecc.pslverr),
-                      .reg_o(reg_ecc_bus)
-                      );
-
-  `REG_BUS_ASSIGN_TO_REQ(ecc_req, reg_ecc_bus);
-  `REG_BUS_ASSIGN_FROM_RSP(reg_ecc_bus, ecc_rsp);
+  logic [1:0]    private0_error;
 
 
 
     ecc_sram_wrap #(
-                    .BankSize  ( BANK_SIZE_PRI0 ),
-                    .ecc_req_t(ecc_req_t),
-                    .ecc_rsp_t(ecc_rsp_t)
+                    .BankSize  ( BANK_SIZE_PRI0 )
                     ) bank_sram_pri0_i (
-                              .clk_i(clk_i),
-                              .rst_ni(rst_ni),
-                              .speriph_request(ecc_req),
-                              .speriph_response(ecc_rsp),
-                              .tcdm_req_i   ( mem_pri_slave[0].req                                  ),
-                              .tcdm_wen_i    ( mem_pri_slave[0].wen                                 ),
-                              .tcdm_add_i  (  pri0_address),
-                              // and bank selection (log2(NB_BANKS) bits)
-                              .tcdm_wdata_i (  mem_pri_slave[0].wdata                               ),
-                              .tcdm_be_i    ( mem_pri_slave[0].be                                     ),
-                              .tcdm_rdata_o (  mem_pri_slave[0].r_rdata                              ),
-                              .tcdm_gnt_o   (   mem_pri_slave[0].gnt                                 )
-                              );
+                                        .clk_i(clk_i),
+                                        .tcdm_req_i   ( mem_pri_slave[0].req                                  ),
+                                        .tcdm_wen_i    ( mem_pri_slave[0].wen                                 ),
+                                        .tcdm_add_i  (  pri0_address),
+                                        // and bank selection (log2(NB_BANKS) bits)
+                                        .tcdm_wdata_i (  mem_pri_slave[0].wdata                                ),
+                                        .tcdm_be_i    ( mem_pri_slave[0].be                                    ),
+                                        .tcdm_rdata_o (  mem_pri_slave[0].r_rdata                              ),
+                                        .tcdm_gnt_o   (   mem_pri_slave[0].gnt                                 ),
+                                        .error_o      ( private0_error                                         )
+                                        );
 
 
 
@@ -165,48 +144,83 @@ module l2_ram_multi_bank #(
     assign pri1_address = mem_pri_slave[1].add - `SOC_MEM_MAP_PRIVATE_BANK1_START_ADDR;
 
 
-  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  // tc_sram #(                                                                                                                //
-  //           .NumWords  ( BANK_SIZE_PRI1 ),                                                                                  //
-  //           .DataWidth ( 32             ),                                                                                  //
-  //           .NumPorts  ( 1              ),                                                                                  //
-  //           .Latency   ( 1              )                                                                                   //
-  //           ) bank_sram_pri1_i (                                                                                            //
-  //                               .clk_i,                                                                                     //
-  //                               .rst_ni,                                                                                    //
-  //                               .req_i   (  mem_pri_slave[1].req                  ),                                        //
-  //                               .we_i    ( ~mem_pri_slave[1].wen                  ),                                        //
-  //                               .addr_i  (  pri1_address[PRI1_MEM_ADDR_WIDTH+1:2] ), //Convert from byte to word addressing //
-  //                               .wdata_i (  mem_pri_slave[1].wdata                ),                                        //
-  //                               .be_i    (  mem_pri_slave[1].be                   ),                                        //
-  //                               .rdata_o (  mem_pri_slave[1].r_rdata              )                                         //
-  //                               );                                                                                          //
-  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  logic [1:0]    private1_error;
+
+  ecc_sram_wrap #(
+                  .BankSize  ( BANK_SIZE_PRI1 )
+                  ) bank_sram_pri1_i (
+                                      .clk_i(clk_i),
+                                      .rst_ni(rst_ni),
+                                      .tcdm_req_i   ( mem_pri_slave[1].req                                  ),
+                                      .tcdm_wen_i    ( mem_pri_slave[1].wen                                 ),
+                                      .tcdm_add_i  (  pri1_address),
+                                      // and bank selection (log2(NB_BANKS) bits)
+                                      .tcdm_wdata_i (  mem_pri_slave[1].wdata                               ),
+                                      .tcdm_be_i    ( mem_pri_slave[1].be                                     ),
+                                      .tcdm_rdata_o (  mem_pri_slave[1].r_rdata                              ),
+                                      .tcdm_gnt_o   (   mem_pri_slave[1].gnt                                 ),
+                                      .error_o      ( private1_error                                         )
+                                      );
 
 
+// Register Interface
+
+  REG_BUS #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) reg_ecc_bus ();
 
 
+  apb_to_reg apb2reg (
+                      .clk_i(clk_i),
+                      .rst_ni(rst_ni),
+                      .penable_i(apb_slave_ecc.penable),
+                      .pwrite_i(apb_slave_ecc.pwrite),
+                      .paddr_i(apb_slave_ecc.paddr),
+                      .psel_i(apb_slave_ecc.psel),
+                      .pwdata_i(apb_slave_ecc.pwdata),
+                      .prdata_o(apb_slave_ecc.prdata),
+                      .pready_o(apb_slave_ecc.pready),
+                      .pslverr_o(apb_slave_ecc.pslverr),
+                      .reg_o(reg_ecc_bus)
+                      );
 
-    ecc_sram_wrap #(
-                    .BankSize  ( BANK_SIZE_PRI1 ),
-                    .ecc_req_t(ecc_req_t),
-                    .ecc_rsp_t(ecc_rsp_t)
-                    ) bank_sram_pri1_i (
-                              .clk_i(clk_i),
-                              .rst_ni(rst_ni),
-                              .tcdm_req_i   ( mem_pri_slave[1].req                                  ),
-                              .tcdm_wen_i    ( mem_pri_slave[1].wen                                 ),
-                              .tcdm_add_i  (  pri1_address),
-                              // and bank selection (log2(NB_BANKS) bits)
-                              .tcdm_wdata_i (  mem_pri_slave[1].wdata                               ),
-                              .tcdm_be_i    ( mem_pri_slave[1].be                                     ),
-                              .tcdm_rdata_o (  mem_pri_slave[1].r_rdata                              ),
-                              .tcdm_gnt_o   (   mem_pri_slave[1].gnt                                 )
-                              //.tcdm_gnt_o ()
-                              );
+  `REG_BUS_ASSIGN_TO_REQ(ecc_req, reg_ecc_bus);
+  `REG_BUS_ASSIGN_FROM_RSP(reg_ecc_bus, ecc_rsp);
 
 
+  ecc_manager_reg2hw_t reg2hw;
+  ecc_manager_hw2reg_t hw2reg;
 
+  ecc_manager_reg_top #(
+                        .reg_req_t ( ecc_req_t ),
+                        .reg_rsp_t ( ecc_rsp_t )
+                        ) i_registers (
+                                       .clk_i     ( clk_i            ),
+                                       .rst_ni    ( rst_ni           ),
+                                       .reg_req_i ( ecc_req  ),
+                                       .reg_rsp_o ( ecc_rsp ),
+                                       .reg2hw    ( reg2hw           ),
+                                       .hw2reg    ( hw2reg           ),
+                                       .devmode_i ( '0               )
+                                       );
 
+  assign bank_be = 1'b1;
+
+  assign hw2reg.private0.d = reg2hw.private0.q + 1;
+  assign hw2reg.private0.de = private0_error[0];
+
+  assign hw2reg.private1.d = reg2hw.private1.q + 1;
+  assign hw2reg.private1.de = private1_error[0];
+
+  assign hw2reg.cuts0.d = reg2hw.cuts0.q + 1;
+  assign hw2reg.cuts0.de = banks_error[0][0];
+
+  assign hw2reg.cuts1.d = reg2hw.cuts1.q + 1;
+  assign hw2reg.cuts1.de = banks_error[1][0];
+
+  assign hw2reg.cuts2.d = reg2hw.cuts2.q + 1;
+  assign hw2reg.cuts2.de = banks_error[2][0];
+
+  assign hw2reg.cuts3.d = reg2hw.cuts3.q + 1;
+  assign hw2reg.cuts3.de = banks_error[3][0];
 
 endmodule // l2_ram_multi_bank
