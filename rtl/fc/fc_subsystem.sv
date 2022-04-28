@@ -173,8 +173,8 @@ module fc_subsystem #(
                     .clk_i(clk_i),
                     .rst_ni(rst_ni),
 
-                    .speriph_request(tcls_req),
-                    .speriph_response(tcls_rsp),
+                    .reg_request(tcls_req),
+                    .reg_response(tcls_rsp),
                     .tcls_triple_core_mismatch(),
                     .tcls_single_core_mismatch(tcls_single_core_mismatch),
 
