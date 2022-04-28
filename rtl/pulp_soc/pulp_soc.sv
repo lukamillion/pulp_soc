@@ -358,6 +358,7 @@ module pulp_soc import dm::*; #(
     APB_BUS                s_apb_eu_bus ();
     APB_BUS                s_apb_hwpe_bus ();
     APB_BUS                s_apb_debug_bus();
+    APB_BUS                s_apb_ecc_bus ();
 
 
     AXI_BUS #(
@@ -551,7 +552,8 @@ module pulp_soc import dm::*; #(
         .init_ni         ( 1'b1               ),
         .test_mode_i     ( dft_test_mode_i    ),
         .mem_slave       ( s_mem_l2_bus       ),
-        .mem_pri_slave   ( s_mem_l2_pri_bus   )
+        .mem_pri_slave   ( s_mem_l2_pri_bus   ),
+        .apb_slave_ecc   ( s_apb_ecc_bus      )
     );
 
 
@@ -614,6 +616,7 @@ module pulp_soc import dm::*; #(
         .apb_eu_master          ( s_apb_eu_bus           ),
         .apb_debug_master       ( s_apb_debug_bus        ),
         .apb_hwpe_master        ( s_apb_hwpe_bus         ),
+        .apb_ecc_master         ( s_apb_ecc_bus          ),
 
         .l2_rx_master           ( s_lint_udma_rx_bus     ),
         .l2_tx_master           ( s_lint_udma_tx_bus     ),

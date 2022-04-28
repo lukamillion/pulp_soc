@@ -28,7 +28,8 @@ module periph_bus_wrap #(
     APB_BUS.Master mmap_debug_master,
     APB_BUS.Master timer_master,
     APB_BUS.Master hwpe_master,
-    APB_BUS.Master stdout_master
+    APB_BUS.Master stdout_master,
+    APB_BUS.Master ecc_master
 );
 
     localparam NB_MASTER = `NB_MASTER;
@@ -92,7 +93,11 @@ module periph_bus_wrap #(
 
     `APB_ASSIGN_MASTER(s_masters[10], mmap_debug_master);
     assign s_start_addr[10] = `DEBUG_START_ADDR;
-    assign s_end_addr[10]   = `DEBUG_END_ADDR;
+    assign s_end_addr[10] = `DEBUG_END_ADDR;
+
+    `APB_ASSIGN_MASTER(s_masters[11], ecc_master);
+    assign s_start_addr[11] = `ECC_START_ADDR;
+    assign s_end_addr[11]   = `ECC_END_ADDR;
 
     //********************************************************
     //**************** SOC BUS *******************************
