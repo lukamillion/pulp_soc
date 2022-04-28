@@ -54,6 +54,7 @@ module soc_peripherals #(
     APB_BUS.Master                     apb_eu_master,
     APB_BUS.Master                     apb_hwpe_master,
     APB_BUS.Master                     apb_debug_master,
+    APB_BUS.Master                     apb_tcls_master,
 
     // FABRIC CONTROLLER MASTER REFILL PORT
     XBAR_TCDM_BUS.Master               l2_rx_master,
@@ -286,7 +287,8 @@ module soc_peripherals #(
         .mmap_debug_master   ( apb_debug_master   ),
         .hwpe_master         ( apb_hwpe_master    ),
         .timer_master        ( s_apb_timer_bus    ),
-        .stdout_master       ( s_stdout_bus       )
+        .stdout_master       ( s_stdout_bus       ),
+        .tcls_master         ( apb_tcls_master    )
     );
 
     `ifdef SYNTHESIS
