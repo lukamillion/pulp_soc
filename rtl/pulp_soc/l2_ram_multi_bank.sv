@@ -45,11 +45,10 @@ module l2_ram_multi_bank #(
 
     //INTERLEAVED Memory
     logic [31:0]           interleaved_addresses[NB_BANKS];
-    logic [NB_BANKS-1:0][1:0]            banks_error;
+    logic [NB_BANKS-1:0]     banks_error;
     for(genvar i=0; i<NB_BANKS; i++) begin : CUTS
         //Perform TCDM handshaking for constant 1 cycle latency
         //assign mem_slave[i].gnt = mem_slave[i].req;
-        assign mem_slave[i].r_opc = 1'b0;
         always_ff @(posedge clk_i, negedge rst_ni) begin
             if (!rst_ni) begin
                 mem_slave[i].r_valid <= 1'b0;
@@ -77,7 +76,8 @@ module l2_ram_multi_bank #(
                                  .tcdm_be_i    (  mem_slave[i].be                                   ),
                                  .tcdm_rdata_o (  mem_slave[i].r_rdata                              ),
                                  .tcdm_gnt_o   (  mem_slave[i].gnt                                  ),
-                                 .error_o      (  banks_error[i]                                    )
+                                 .single_error_o      (  banks_error[i]                             ),
+                                 .multi_error_o       (  mem_slave[i].r_opc                         )
                                  );
 
 
@@ -87,7 +87,6 @@ module l2_ram_multi_bank #(
     // PRIVATE BANK0
     //Perform TCDM handshaking for constant 1 cycle latency
 
-    assign mem_pri_slave[0].r_opc = 1'b0;
     always_ff @(posedge clk_i, negedge rst_ni) begin
         if (!rst_ni) begin
             mem_pri_slave[0].r_valid <= 1'b0;
@@ -105,7 +104,7 @@ module l2_ram_multi_bank #(
 
 
 
-  logic [1:0]    private0_error;
+  logic    private0_error;
 
 
 
@@ -113,15 +112,16 @@ module l2_ram_multi_bank #(
                     .BankSize  ( BANK_SIZE_PRI0 )
                     ) bank_sram_pri0_i (
                                         .clk_i(clk_i),
-                                        .tcdm_req_i   ( mem_pri_slave[0].req                                  ),
-                                        .tcdm_wen_i    ( mem_pri_slave[0].wen                                 ),
+                                        .tcdm_req_i   ( mem_pri_slave[0].req                                   ),
+                                        .tcdm_wen_i    ( mem_pri_slave[0].wen                                  ),
                                         .tcdm_add_i  (  pri0_address),
                                         // and bank selection (log2(NB_BANKS) bits)
                                         .tcdm_wdata_i (  mem_pri_slave[0].wdata                                ),
                                         .tcdm_be_i    ( mem_pri_slave[0].be                                    ),
                                         .tcdm_rdata_o (  mem_pri_slave[0].r_rdata                              ),
                                         .tcdm_gnt_o   (   mem_pri_slave[0].gnt                                 ),
-                                        .error_o      ( private0_error                                         )
+                                        .single_error_o      ( private0_error                                  ),
+                                        .multi_error_o       ( mem_pri_slave[0].r_opc                          )
                                         );
 
 
@@ -131,7 +131,6 @@ module l2_ram_multi_bank #(
     // PRIVATE BANK1
     //Perform TCDM handshaking for constant 1 cycle latency
     //assign mem_pri_slave[1].gnt = mem_pri_slave[1].req;
-    assign mem_pri_slave[1].r_opc = 1'b0;
     always_ff @(posedge clk_i, negedge rst_ni) begin
         if (!rst_ni) begin
             mem_pri_slave[1].r_valid <= 1'b0;
@@ -145,22 +144,23 @@ module l2_ram_multi_bank #(
 
 
 
-  logic [1:0]    private1_error;
+  logic    private1_error;
 
   ecc_sram_wrap #(
                   .BankSize  ( BANK_SIZE_PRI1 )
                   ) bank_sram_pri1_i (
                                       .clk_i(clk_i),
                                       .rst_ni(rst_ni),
-                                      .tcdm_req_i   ( mem_pri_slave[1].req                                  ),
-                                      .tcdm_wen_i    ( mem_pri_slave[1].wen                                 ),
+                                      .tcdm_req_i   ( mem_pri_slave[1].req                                   ),
+                                      .tcdm_wen_i    ( mem_pri_slave[1].wen                                  ),
                                       .tcdm_add_i  (  pri1_address),
                                       // and bank selection (log2(NB_BANKS) bits)
-                                      .tcdm_wdata_i (  mem_pri_slave[1].wdata                               ),
-                                      .tcdm_be_i    ( mem_pri_slave[1].be                                     ),
+                                      .tcdm_wdata_i (  mem_pri_slave[1].wdata                                ),
+                                      .tcdm_be_i    ( mem_pri_slave[1].be                                    ),
                                       .tcdm_rdata_o (  mem_pri_slave[1].r_rdata                              ),
                                       .tcdm_gnt_o   (   mem_pri_slave[1].gnt                                 ),
-                                      .error_o      ( private1_error                                         )
+                                      .single_error_o      ( private1_error                                  ),
+                                      .multi_error_o       ( mem_pri_slave[1].r_opc                          )
                                       );
 
 
@@ -196,31 +196,30 @@ module l2_ram_multi_bank #(
                         ) i_registers (
                                        .clk_i     ( clk_i            ),
                                        .rst_ni    ( rst_ni           ),
-                                       .reg_req_i ( ecc_req  ),
-                                       .reg_rsp_o ( ecc_rsp ),
+                                       .reg_req_i ( ecc_req          ),
+                                       .reg_rsp_o ( ecc_rsp          ),
                                        .reg2hw    ( reg2hw           ),
                                        .hw2reg    ( hw2reg           ),
                                        .devmode_i ( '0               )
                                        );
 
-  assign bank_be = 1'b1;
 
-  assign hw2reg.private0.d = reg2hw.private0.q + 1;
-  assign hw2reg.private0.de = private0_error[0];
+  assign hw2reg.mismatch_count[0].d = reg2hw.mismatch_count[0].q + 1;
+  assign hw2reg.mismatch_count[0].de = private0_error;
 
-  assign hw2reg.private1.d = reg2hw.private1.q + 1;
-  assign hw2reg.private1.de = private1_error[0];
+  assign hw2reg.mismatch_count[1].d = reg2hw.mismatch_count[1].q + 1;
+  assign hw2reg.mismatch_count[1].de = private1_error;
 
-  assign hw2reg.cuts0.d = reg2hw.cuts0.q + 1;
-  assign hw2reg.cuts0.de = banks_error[0][0];
+  assign hw2reg.mismatch_count[2].d = reg2hw.mismatch_count[2].q + 1;
+  assign hw2reg.mismatch_count[2].de = banks_error[0];
 
-  assign hw2reg.cuts1.d = reg2hw.cuts1.q + 1;
-  assign hw2reg.cuts1.de = banks_error[1][0];
+  assign hw2reg.mismatch_count[3].d = reg2hw.mismatch_count[3].q + 1;
+  assign hw2reg.mismatch_count[3].de = banks_error[1];
 
-  assign hw2reg.cuts2.d = reg2hw.cuts2.q + 1;
-  assign hw2reg.cuts2.de = banks_error[2][0];
+  assign hw2reg.mismatch_count[4].d = reg2hw.mismatch_count[4].q + 1;
+  assign hw2reg.mismatch_count[4].de = banks_error[2];
 
-  assign hw2reg.cuts3.d = reg2hw.cuts3.q + 1;
-  assign hw2reg.cuts3.de = banks_error[3][0];
+  assign hw2reg.mismatch_count[5].d = reg2hw.mismatch_count[5].q + 1;
+  assign hw2reg.mismatch_count[5].de = banks_error[3];
 
 endmodule // l2_ram_multi_bank
